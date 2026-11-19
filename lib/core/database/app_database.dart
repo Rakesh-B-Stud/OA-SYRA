@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
 /// Singleton SQLite Database Manager for OASYRA Local Storage Architecture.
 ///
@@ -34,6 +36,16 @@ class AppDatabase {
   }
 
   Future<Database> _initDatabase() async {
+    if (kIsWeb) {
+      databaseFactory = databaseFactoryFfiWeb;
+      return await openDatabase(
+        'oasyra_local_web.db',
+        version: _dbVersion,
+        onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
+      );
+    }
+
     final dbPath = await getDatabasesPath();
     final path = p.join(dbPath, _dbName);
 

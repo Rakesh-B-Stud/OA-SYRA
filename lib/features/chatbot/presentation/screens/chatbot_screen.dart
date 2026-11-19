@@ -1,6 +1,9 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../core/config/ai_config.dart';
@@ -19,6 +22,7 @@ class ChatbotScreen extends ConsumerStatefulWidget {
 class _ChatbotScreenState extends ConsumerState<ChatbotScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  File? _selectedImage;
 
   @override
   void dispose() {
@@ -39,9 +43,64 @@ class _ChatbotScreenState extends ConsumerState<ChatbotScreen> {
     });
   }
 
+  Future<void> _pickImage(ImageSource source) async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: source, imageQuality: 85);
+    if (pickedFile != null) {
+      setState(() {
+        _selectedImage = File(pickedFile.path);
+      });
+    }
+  }
+
+  void _showImagePickerModal() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Attach Image', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.camera_alt_rounded, color: OasyraColors.primary),
+                title: const Text('Take Photo (Camera)'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_rounded, color: OasyraColors.primary),
+                title: const Text('Choose from Gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _handleSend() {
     final text = _messageController.text.trim();
-    if (text.isNotEmpty) {
+    if (_selectedImage != null) {
+      final imagePath = _selectedImage!.path;
+      setState(() {
+        _selectedImage = null;
+      });
+      ref.read(chatbotNotifierProvider.notifier).sendImageMessage(imagePath, text);
+      _messageController.clear();
+      _scrollToBottom();
+    } else if (text.isNotEmpty) {
       ref.read(chatbotNotifierProvider.notifier).sendMessage(text);
       _messageController.clear();
       _scrollToBottom();
@@ -88,6 +147,7 @@ class _ChatbotScreenState extends ConsumerState<ChatbotScreen> {
   Widget build(BuildContext context) {
     final currentConversation = ref.watch(currentConversationProvider);
     final chatbotState = ref.watch(chatbotNotifierProvider);
+    debugPrint("[OASYRA_CHAT_UI] ChatbotScreen.build() executed. Conv ID: ${currentConversation?.id}, Msg count: ${currentConversation?.messages.length}, isLoading: ${chatbotState.isLoading}");
 
     ref.listen(chatbotNotifierProvider, (previous, next) {
       next.maybeWhen(
@@ -115,11 +175,6 @@ class _ChatbotScreenState extends ConsumerState<ChatbotScreen> {
                 subtitle: 'AI Health & Nutrition Guide',
                 showBackButton: true,
                 actions: [
-                  IconButton(
-                    icon: const Icon(Icons.offline_bolt_outlined, color: Colors.amberAccent),
-                    tooltip: 'Test Offline AI',
-                    onPressed: () => context.push('/ondevice-ai-test'),
-                  ),
                   IconButton(
                     icon: const Icon(Icons.history_rounded, color: Colors.white),
                     tooltip: 'Recent Chats',
@@ -191,16 +246,6 @@ class _ChatbotScreenState extends ConsumerState<ChatbotScreen> {
               ),
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.offline_bolt_rounded, color: Colors.amber),
-            title: const Text('Test Offline AI (GGUF)', style: TextStyle(fontWeight: FontWeight.bold, color: OasyraColors.primary)),
-            subtitle: const Text('Local llama.cpp Llama-3.2-1B Prototype'),
-            onTap: () {
-              Navigator.pop(context);
-              context.push('/ondevice-ai-test');
-            },
-          ),
-          const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.add_comment_rounded, color: OasyraColors.primary),
             title: const Text('New Conversation', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -277,14 +322,12 @@ class _ChatbotScreenState extends ConsumerState<ChatbotScreen> {
   }
 
   Widget _buildMessageList(List<ChatMessage> messages, bool isLoading) {
+    debugPrint("[OASYRA_CHAT_UI] _buildMessageList() rendering ${messages.length} messages. Last msg role: ${messages.isNotEmpty ? messages.last.role : 'none'}, text len: ${messages.isNotEmpty ? messages.last.text.length : 0}");
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.all(24),
-      itemCount: messages.length + (isLoading ? 1 : 0),
+      itemCount: messages.length,
       itemBuilder: (context, index) {
-        if (index == messages.length) {
-          return _buildTypingIndicator();
-        }
         final message = messages[index];
         return _buildMessageBubble(message);
       },
@@ -293,7 +336,10 @@ class _ChatbotScreenState extends ConsumerState<ChatbotScreen> {
 
   Widget _buildMessageBubble(ChatMessage message) {
     final isUser = message.role == ChatRole.user;
+    final isStreamingEmpty = !isUser && message.text.isEmpty;
+
     return Padding(
+      key: ValueKey('${message.timestamp.millisecondsSinceEpoch}_${message.role.name}'),
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -325,14 +371,46 @@ class _ChatbotScreenState extends ConsumerState<ChatbotScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    message.text,
-                    style: TextStyle(
-                      color: isUser ? Colors.white : OasyraColors.textPrimary,
-                      height: 1.5,
-                      fontSize: 14,
+                  if (message.imagePath != null && File(message.imagePath!).existsSync()) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        File(message.imagePath!),
+                        width: 200,
+                        height: 150,
+                        fit: BoxFit.cover,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (isUser)
+                    Text(
+                      message.text,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        height: 1.5,
+                        fontSize: 14,
+                      ),
+                    )
+                  else if (isStreamingEmpty)
+                    _buildTypingIndicator()
+                  else
+                    MarkdownBody(
+                      data: message.text,
+                      selectable: true,
+                      styleSheet: MarkdownStyleSheet(
+                        p: const TextStyle(color: OasyraColors.textPrimary, fontSize: 14, height: 1.5),
+                        h1: const TextStyle(color: OasyraColors.primary, fontSize: 18, fontWeight: FontWeight.bold),
+                        h2: const TextStyle(color: OasyraColors.primary, fontSize: 16, fontWeight: FontWeight.bold),
+                        h3: const TextStyle(color: OasyraColors.primary, fontSize: 15, fontWeight: FontWeight.w600),
+                        strong: const TextStyle(color: OasyraColors.textPrimary, fontWeight: FontWeight.bold),
+                        listBullet: const TextStyle(color: OasyraColors.primary, fontSize: 14),
+                        tableBody: const TextStyle(color: OasyraColors.textPrimary, fontSize: 13),
+                        tableHead: const TextStyle(color: OasyraColors.primary, fontWeight: FontWeight.bold, fontSize: 13),
+                        tableBorder: TableBorder.all(color: OasyraColors.border, width: 1),
+                        tablePadding: const EdgeInsets.all(8),
+                      ),
+                    ),
                   const SizedBox(height: 4),
                   Text(
                     DateFormat('h:mm a').format(message.timestamp),
@@ -351,7 +429,7 @@ class _ChatbotScreenState extends ConsumerState<ChatbotScreen> {
           ],
         ],
       ),
-    ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.1, end: 0);
+    );
   }
 
   Widget _buildAvatar(IconData icon, Color color) {
@@ -367,17 +445,7 @@ class _ChatbotScreenState extends ConsumerState<ChatbotScreen> {
   }
 
   Widget _buildTypingIndicator() {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Text('...', style: TextStyle(fontWeight: FontWeight.bold)),
-      ),
-    ).animate(onPlay: (c) => c.repeat()).shimmer(duration: 1.seconds);
+    return const _AnimatedThinkingIndicator();
   }
 
   Widget _buildQuickActions() {
@@ -415,38 +483,160 @@ class _ChatbotScreenState extends ConsumerState<ChatbotScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.only(topLeft: Radius.circular(32), topRight: Radius.circular(32)),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              enabled: !isLoading,
-              style: const TextStyle(fontSize: 14),
-              decoration: InputDecoration(
-                hintText: 'Type your question...',
-                hintStyle: const TextStyle(color: OasyraColors.textTertiary),
-                filled: true,
-                fillColor: OasyraColors.surfaceSoft,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          if (_selectedImage != null) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: OasyraColors.surfaceSoft,
+                borderRadius: BorderRadius.circular(16),
               ),
-              onSubmitted: (_) => _handleSend(),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.file(
+                      _selectedImage!,
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text('Image attached', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.cancel_rounded, color: OasyraColors.error),
+                    onPressed: () => setState(() => _selectedImage = null),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          IconButton.filled(
-            onPressed: isLoading ? null : _handleSend,
-            icon: const Icon(Icons.send_rounded),
-            style: IconButton.styleFrom(
-              backgroundColor: OasyraColors.primary,
-              foregroundColor: Colors.white,
-            ),
+          ],
+          Row(
+            children: [
+              IconButton(
+                onPressed: isLoading ? null : _showImagePickerModal,
+                icon: const Icon(Icons.add_photo_alternate_outlined, color: OasyraColors.primary),
+                tooltip: 'Attach image',
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: TextField(
+                  controller: _messageController,
+                  enabled: !isLoading,
+                  style: const TextStyle(fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: _selectedImage != null ? 'Ask about this image...' : 'Type your question...',
+                    hintStyle: const TextStyle(color: OasyraColors.textTertiary),
+                    filled: true,
+                    fillColor: OasyraColors.surfaceSoft,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  ),
+                  onSubmitted: (_) => _handleSend(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              IconButton.filled(
+                onPressed: isLoading ? null : _handleSend,
+                icon: const Icon(Icons.send_rounded),
+                style: IconButton.styleFrom(
+                  backgroundColor: OasyraColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+}
+
+class _AnimatedThinkingIndicator extends StatefulWidget {
+  const _AnimatedThinkingIndicator();
+
+  @override
+  State<_AnimatedThinkingIndicator> createState() => _AnimatedThinkingIndicatorState();
+}
+
+class _AnimatedThinkingIndicatorState extends State<_AnimatedThinkingIndicator> {
+  int _statusIndex = 0;
+  Timer? _timer;
+
+  static const List<String> _statuses = [
+    'Understanding your question...',
+    'Reviewing your nutrition context...',
+    'Preparing your response...',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 2500), (timer) {
+      if (mounted) {
+        setState(() {
+          _statusIndex = (_statusIndex + 1) % _statuses.length;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'OASYRA Virtual Dietitian',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: OasyraColors.primary,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              '...',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: OasyraColors.primary,
+              ),
+            ).animate(onPlay: (c) => c.repeat()).shimmer(duration: 1.seconds),
+            const SizedBox(width: 8),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              child: Text(
+                _statuses[_statusIndex],
+                key: ValueKey<int>(_statusIndex),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                  color: OasyraColors.textTertiary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

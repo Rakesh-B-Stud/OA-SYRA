@@ -3,6 +3,7 @@ import time
 import os
 import json
 import base64
+import logging
 import urllib.request
 import urllib.error
 from typing import List, Dict, Optional, Any
@@ -18,6 +19,15 @@ import torch.nn as nn
 import torchvision.transforms as transforms
 import torchvision.models as models
 from ultralytics import YOLO
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("oasyra_ml")
+
+postgres_status: str = "NOT_CONFIGURED"
+firebase_status: str = "NOT_CONFIGURED"
 
 BASE_DIR = Path(__file__).resolve().parent
 env_file = BASE_DIR / ".env"
@@ -227,12 +237,16 @@ def readiness_check():
     models_ready = yolo_model is not None and mobilenet_model is not None
     groq_key = os.getenv("GROQ_API_KEY") or os.getenv("XAI_API_KEY")
     groq_ready = bool(groq_key and groq_key.strip())
+    cloud_sync_ready = (postgres_status == "READY" and firebase_status == "READY")
 
     is_ready = models_ready and groq_ready
     return {
         "status": "ready" if is_ready else "not_ready",
         "models_loaded": models_ready,
         "groq_configured": groq_ready,
+        "postgres_status": postgres_status,
+        "firebase_status": firebase_status,
+        "cloud_sync_ready": cloud_sync_ready,
     }
 
 
@@ -671,20 +685,30 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 def get_db_connection():
-    if not DATABASE_URL:
+    if not DATABASE_URL or not DATABASE_URL.strip():
         return None
     try:
         import psycopg2
         return psycopg2.connect(DATABASE_URL)
     except Exception as e:
-        print(f"PostgreSQL connection error: {e}")
+        logger.error(f"PostgreSQL connection error: {e}")
         return None
 
 
 def init_postgres_db():
+    global postgres_status
+    if not DATABASE_URL or not DATABASE_URL.strip():
+        postgres_status = "NOT_CONFIGURED"
+        logger.warning("DATABASE_URL environment variable is not configured. Cloud PostgreSQL synchronization is disabled.")
+        return
+
+    postgres_status = "INITIALIZING"
     conn = get_db_connection()
     if not conn:
+        postgres_status = "FAILED"
+        logger.error("Failed to connect to PostgreSQL database.")
         return
+
     try:
         with conn.cursor() as cur:
             cur.execute("""
@@ -735,8 +759,11 @@ def init_postgres_db():
                 );
             """)
             conn.commit()
+            postgres_status = "READY"
+            logger.info("PostgreSQL database connection and schema initialized successfully.")
     except Exception as e:
-        print(f"Failed to initialize PostgreSQL schema: {e}")
+        postgres_status = "FAILED"
+        logger.error(f"Failed to initialize PostgreSQL schema: {e}")
     finally:
         conn.close()
 
@@ -753,28 +780,40 @@ firebase_app = None
 
 
 def init_firebase_admin():
-    global firebase_app
+    global firebase_app, firebase_status
     if firebase_admin is None:
-        return
-    if firebase_admin._apps:
-        firebase_app = firebase_admin.get_app()
+        firebase_status = "FAILED"
+        logger.error("firebase-admin package is not installed.")
         return
 
+    if firebase_admin._apps:
+        firebase_app = firebase_admin.get_app()
+        firebase_status = "READY"
+        logger.info("Firebase Admin SDK app already initialized.")
+        return
+
+    firebase_status = "INITIALIZING"
     service_account_info = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
     if service_account_info:
         try:
             cert_dict = json.loads(service_account_info)
             cred = credentials.Certificate(cert_dict)
             firebase_app = firebase_admin.initialize_app(cred)
+            firebase_status = "READY"
+            logger.info("Firebase Admin SDK initialized successfully with service account credentials.")
             return
         except Exception as e:
-            print(f"Error initializing Firebase Admin with service account JSON: {e}")
+            firebase_status = "FAILED"
+            logger.error(f"Error initializing Firebase Admin with service account JSON: {e}")
 
     try:
         project_id = os.getenv("FIREBASE_PROJECT_ID", "oa-syra")
         firebase_app = firebase_admin.initialize_app(options={"projectId": project_id})
+        firebase_status = "READY"
+        logger.info(f"Firebase Admin SDK initialized with project ID: {project_id}")
     except Exception as e:
-        print(f"Firebase Admin initialization info: {e}")
+        firebase_status = "FAILED"
+        logger.error(f"Firebase Admin initialization failed: {e}")
 
 
 async def get_authenticated_uid(authorization: Optional[str] = Header(None)) -> str:

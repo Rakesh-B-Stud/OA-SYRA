@@ -17,7 +17,6 @@ import '../../features/analysis/presentation/screens/health_analysis_screen.dart
 import '../../features/health/presentation/screens/health_data_screen.dart';
 import '../../features/chatbot/presentation/screens/chatbot_screen.dart';
 import '../../features/chatbot/presentation/screens/ai_test_screen.dart';
-import '../../features/chatbot/presentation/screens/ondevice_ai_test_screen.dart';
 import '../../features/chatbot/presentation/providers/chatbot_providers.dart';
 import '../../shared/screens/main_scaffold.dart';
 import '../../features/profile/presentation/screens/report_preview_screen.dart';
@@ -126,10 +125,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/ai-test',
             builder: (context, state) => const AITestScreen(),
-          ),
-          GoRoute(
-            path: '/ondevice-ai-test',
-            builder: (context, state) => const OnDeviceAiTestScreen(),
           ),
           GoRoute(
             path: '/health-data',

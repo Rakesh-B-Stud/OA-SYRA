@@ -162,13 +162,22 @@ class _HealthProfileSetupScreenState extends ConsumerState<HealthProfileSetupScr
       await ref.read(healthMetricsProvider.notifier).loadMeasurements();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Profile completed successfully!'),
-            backgroundColor: OasyraColors.success,
-          ),
-        );
-        context.go('/dashboard');
+        final scaffoldMessenger = ScaffoldMessenger.of(context);
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/dashboard');
+        }
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          scaffoldMessenger.showSnackBar(
+            const SnackBar(
+              content: Text('Profile completed successfully!'),
+              backgroundColor: OasyraColors.success,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        });
       }
     } catch (e) {
       if (mounted) {

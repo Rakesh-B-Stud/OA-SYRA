@@ -514,16 +514,34 @@ class _MealLoggingScreenState extends ConsumerState<MealLoggingScreen> {
       await ref.read(dailyNutritionProvider.notifier).logMeal(mealRecord);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Meal logged successfully with ${loggedItems.length} item(s)!')),
-        );
-        context.pop();
+        final scaffoldMessenger = ScaffoldMessenger.of(context);
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/nutrition');
+        }
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          scaffoldMessenger.showSnackBar(
+            SnackBar(
+              content: Text('Meal logged successfully with ${loggedItems.length} item(s)!'),
+              backgroundColor: OasyraColors.success,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        });
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save meal: $e')),
+          SnackBar(
+            content: Text('Failed to save meal: $e'),
+            backgroundColor: OasyraColors.error,
+          ),
         );
+      }
+    } finally {
+      if (mounted) {
         setState(() => _isSaving = false);
       }
     }

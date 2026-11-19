@@ -6,21 +6,24 @@ class ChatMessage extends Equatable {
   final String text;
   final ChatRole role;
   final DateTime timestamp;
+  final String? imagePath;
 
   const ChatMessage({
     required this.text,
     required this.role,
     required this.timestamp,
+    this.imagePath,
   });
 
   @override
-  List<Object?> get props => [text, role, timestamp];
+  List<Object?> get props => [text, role, timestamp, imagePath];
 
   Map<String, dynamic> toMap() {
     return {
       'text': text,
       'role': role.name,
       'timestamp': timestamp.toIso8601String(),
+      'imagePath': imagePath,
     };
   }
 
@@ -29,6 +32,7 @@ class ChatMessage extends Equatable {
       text: map['text'],
       role: ChatRole.values.byName(map['role']),
       timestamp: DateTime.parse(map['timestamp']),
+      imagePath: map['imagePath'],
     );
   }
 }
