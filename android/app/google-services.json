@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "65700662120",
+    "project_id": "oa-syra",
+    "storage_bucket": "oa-syra.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:65700662120:android:9af33dda7b20774eb2e4dd",
+        "android_client_info": {
+          "package_name": "com.oasyara.oasyara_1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBTtxY_FQxk9ZE35JmaANl2mCT-QT6gCvQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

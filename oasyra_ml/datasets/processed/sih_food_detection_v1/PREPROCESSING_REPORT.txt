@@ -1,0 +1,22 @@
+OASYRA DATASET PREPROCESSING REPORT
+============================================================
+
+Source:
+sih_food_detection
+
+Processed dataset:
+sih_food_detection_v1
+
+Number of classes: 81
+Total images: 3854
+Total label files: 3854
+Original bounding-box annotations: 13829
+Polygon annotations converted to bounding boxes: 1
+
+Processing actions:
+- Original raw dataset preserved unchanged.
+- Images copied using metadata-preserving copy.
+- Bounding-box annotations preserved.
+- Polygon annotations converted to bounding boxes.
+- data.yaml paths normalized for processed dataset.
+- All 81 classes preserved.
